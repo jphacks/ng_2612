@@ -33,7 +33,7 @@ PRIVATE_KEY = ""
 # ==========================================
 # 振動設定
 # ==========================================
-motor_pwm = PWM(Pin(26), freq=1000, duty=0)
+motor_pwm = PWM(Pin(26), freq=20000, duty=0)
 HEARTBEAT_POWER = 400
 
 TEMP_CHANNEL = 0
@@ -145,11 +145,18 @@ def connect_mqtt():
 # ==========================================
 def play_rhythm(intervals):
     for interval in intervals:
-        # 1回の振動
-        vibrate(HEARTBEAT_POWER, 40)
+        # 1打目の振動：強めの振動
+        vibrate(HEARTBEAT_POWER, 30)
+
+        # 1打目と2打目の間のわずかなウェイト
+        time.sleep_ms(50)
+
+        # 2打目の振動：弱めの振動
+        vibrate(int(HEARTBEAT_POWER *0.8), 40)
 
         # 次の振動までの残り時間
-        remaining = max(0, interval - 40)
+        consumed_time = 30 + 50 + 40
+        remaining = max(0, interval - consumed_time)
         time.sleep_ms(remaining)
 
     motor_pwm.duty(0)
