@@ -7,12 +7,10 @@ import json
 from umqtt.simple import MQTTClient
 
 # ==========================================
-# 設定ファイルと証明書のパス
+# Wi-Fi設定
 # ==========================================
-WIFI_CONFIG_FILE = "/wifi.json"
-ROOT_CA_FILE = "/AmazonRootCA1.pem"
-DEVICE_CERT_FILE = "/device-certificate.pem.crt"
-PRIVATE_KEY_FILE = "/private.pem.key"
+WIFI_SSID = ""
+WIFI_PASSWORD = ""
 
 # ==========================================
 # AWS IoT Core設定
@@ -26,30 +24,11 @@ MQTT_PORT = 8883
 # 証明書設定
 # PEMファイルの内容に置き換えてください
 # ==========================================
-def load_wifi_config():
-    with open(WIFI_CONFIG_FILE, "r") as f:
-        config = json.load(f)
+ROOT_CA = ""
 
-    ssid = config.get("ssid")
-    password = config.get("password")
+DEVICE_CERT = ""
 
-    if not ssid or password is None:
-        raise RuntimeError("Invalid Wi-Fi configuration")
-
-    return ssid, password
-
-
-def load_aws_credentials():
-    with open(ROOT_CA_FILE, "rb") as f:
-        root_ca = f.read()
-
-    with open(DEVICE_CERT_FILE, "rb") as f:
-        device_cert = f.read()
-
-    with open(PRIVATE_KEY_FILE, "rb") as f:
-        private_key = f.read()
-
-    return root_ca, device_cert, private_key
+PRIVATE_KEY = ""
 
 # ==========================================
 # 振動設定
@@ -79,13 +58,11 @@ def vibrate(power, duration_ms):
 # Wi-Fi接続
 # ==========================================
 def connect_wifi():
-    ssid, password = load_wifi_config()
-
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
 
     if not wlan.isconnected():
-        wlan.connect(ssid, password)
+        wlan.connect(WIFI_SSID, WIFI_PASSWORD)
 
         timeout = 20
         while not wlan.isconnected() and timeout > 0:
@@ -135,11 +112,11 @@ def mqtt_callback(topic, msg):
 # MQTT接続
 # ==========================================
 def connect_mqtt():
-    root_ca, device_cert, private_key = load_aws_credentials()
-
+    # TLS設定の引数はMicroPythonの実装に依存します。
+    # 使用環境がssl_paramsのcert/keyに対応しているか確認してください。
     tls_params = {
-        "key": private_key,
-        "cert": device_cert,
+        "key": PRIVATE_KEY,
+        "cert": DEVICE_CERT,
         "server_hostname": AWS_ENDPOINT
     }
 
