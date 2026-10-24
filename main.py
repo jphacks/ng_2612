@@ -7,10 +7,12 @@ import json
 from umqtt.simple import MQTTClient
 
 # ==========================================
-# Wi-Fi設定
+# 設定ファイルと証明書のパス
 # ==========================================
 WIFI_CONFIG_FILE = "/wifi.json"
-KEYS_DIR = "/keys"
+ROOT_CA_FILE = "/AmazonRootCA1.pem"
+DEVICE_CERT_FILE = "/device-certificate.pem.crt"
+PRIVATE_KEY_FILE = "/private.pem.key"
 
 # ==========================================
 # AWS IoT Core設定
@@ -38,13 +40,13 @@ def load_wifi_config():
 
 
 def load_aws_credentials():
-    with open(KEYS_DIR + "/AmazonRootCA1.pem", "rb") as f:
+    with open(ROOT_CA_FILE, "rb") as f:
         root_ca = f.read()
 
-    with open(KEYS_DIR + "/device-certificate.pem.crt", "rb") as f:
+    with open(DEVICE_CERT_FILE, "rb") as f:
         device_cert = f.read()
 
-    with open(KEYS_DIR + "/private.pem.key", "rb") as f:
+    with open(PRIVATE_KEY_FILE, "rb") as f:
         private_key = f.read()
 
     return root_ca, device_cert, private_key
