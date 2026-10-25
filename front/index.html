@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>heartbeat</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <h1>❤️</h1>
+
+    <div class="card">
+        <p>色を選んで、心拍に合わせてボタンを10回タップしてください</p>
+
+        <div class="picker" id="picker">
+            <button class="color-btn" data-name="赤" data-color="#ff6666" style="background:#ff6666" aria-label="赤"></button>
+            <button class="color-btn" data-name="オレンジ" data-color="#ff9900" style="background:#ff9900" aria-label="オレンジ"></button>
+            <button class="color-btn" data-name="黄色" data-color="#ffff33" style="background:#ffff33" aria-label="黄色"></button>
+            <button class="color-btn" data-name="ピンク" data-color="#ffcccc" style="background:#ffcccc" aria-label="ピンク"></button>
+            <button class="color-btn" data-name="黄緑" data-color="#66ff99" style="background:#66ff99" aria-label="黄緑"></button>
+            <button class="color-btn" data-name="明るい水色" data-color="#66ffff" style="background:#66ffff" aria-label="明るい水色"></button>
+            <button class="color-btn" data-name="ラベンダー" data-color="#ccccff" style="background:#ccccff" aria-label="ラベンダー"></button>
+
+            <button id="heart-btn" onclick="tapHeart()">タップ</button>
+        </div>
+
+        <div id="status">色を選んでから、リズムを刻んでください</div>
+
+        <div class="log-box" id="log">
+            送信ログがここに表示されます...
+        </div>
+    </div>
+
+    <button id="send-btn" onclick="sendData()" disabled>送信</button>
+
+    <script>
+        let tapTimes = [];
+        let intervals = [];
+        let selectedColor = null; // { name, hex }
+        const MAX_TAPS = 10;
+
+        // API GatewayのURLに置き換えてください
+        const API_GATEWAY_URL = "https://6jooaxa7v2.execute-api.ap-northeast-1.amazonaws.com/heartbeat";
+
+        const statusEl = document.getElementById("status");
+        const logEl = document.getElementById("log");
+        const tapBtn = document.getElementById("heart-btn");
+        const sendBtn = document.getElementById("send-btn");
+        const colorBtns = document.querySelectorAll(".color-btn");
+
+        // ---- 色ボタンを半円状に配置 ----
+        function layoutColors() {
+            const picker = document.getElementById("picker");
+            const w = picker.clientWidth;
+            const radius = w * 0.4;
+            const cx = w / 2;
+            const cy = radius + 30; // 弧の中心(底辺)のy座標
+            const n = colorBtns.length;
+            colorBtns.forEach((btn, i) => {
+                // 左(180°)から右(0°)へ
+                const angle = Math.PI - (Math.PI * i) / (n - 1);
+                const x = cx + radius * Math.cos(angle);
+                const y = cy - radius * Math.sin(angle);
+                btn.style.left = x + "px";
+                btn.style.top = y + "px";
+            });
+            tapBtn.style.left = cx + "px";
+            tapBtn.style.top = cy + "px";
+            picker.style.height = (cy + 80) + "px";
+        }
+        window.addEventListener("resize", layoutColors);
+        layoutColors();
+
+        // ---- 色選択 ----
+        colorBtns.forEach(btn => {
+            btn.addEventListener("click", () => {
+                colorBtns.forEach(b => b.classList.remove("selected"));
+                btn.classList.add("selected");
+                selectedColor = { name: btn.dataset.name, hex: btn.dataset.color };
+                tapBtn.style.backgroundColor = selectedColor.hex;
+                updateSendState();
+                if (intervals.length === 0) {
+                    statusEl.innerText = `「${selectedColor.name}」を選択中。ボタンをタップしてください`;
+                }
+            });
+        });
+
+        // ---- 心拍タップ ----
+        function tapHeart() {
+            // 前回の入力が完了済みなら最初からやり直し
+            if (intervals.length > 0) {
+                intervals = [];
+                tapTimes = [];
+            }
+
+            tapTimes.push(Date.now());
+
+            if (tapTimes.length < MAX_TAPS) {
+                statusEl.innerText =
+                    `リズムを記録中... (あと ${MAX_TAPS - tapTimes.length} 回)`;
+                updateSendState();
+                return;
+            }
+
+            // 10回のタップから9個の間隔(ミリ秒)を計算
+            for (let i = 1; i < tapTimes.length; i++) {
+                intervals.push(tapTimes[i] - tapTimes[i - 1]);
+            }
+            tapTimes = [];
+
+            statusEl.innerText = selectedColor
+                ? "入力完了！右下の送信ボタンを押してください"
+                : "心拍の入力完了。色を選ぶと送信できます";
+            updateSendState();
+        }
+
+        // ---- 送信ボタンの有効/無効 ----
+        function updateSendState() {
+            sendBtn.disabled = !(selectedColor && intervals.length === MAX_TAPS - 1);
+        }
+
+        // ---- 送信 ----
+        async function sendData() {
+            if (sendBtn.disabled) return;
+
+            const payload = {
+                sender: "test_user_1",
+                color: selectedColor.hex,
+                colorName: selectedColor.name,
+                intervals: intervals,
+                timestamp: new Date().toISOString()
+            };
+
+            sendBtn.disabled = true;
+            tapBtn.disabled = true;
+            statusEl.innerText = "心拍データを送信中...";
+            logEl.innerHTML =
+                `<div>[送信データ]</div><pre>${JSON.stringify(payload, null, 2)}</pre>`;
+
+            try {
+                const response = await fetch(API_GATEWAY_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json().catch(() => ({}));
+
+                if (!response.ok) {
+                    throw new Error(result.message || `HTTPエラー: ${response.status}`);
+                }
+
+                statusEl.innerText = "心拍データの送信に成功しました！";
+                logEl.innerHTML += `<div>[結果] ${JSON.stringify(result)}</div>`;
+
+                // 次の入力に備えてリセット
+                intervals = [];
+                tapTimes = [];
+                selectedColor = null;
+                colorBtns.forEach(b => b.classList.remove("selected"));
+                tapBtn.style.backgroundColor = "";
+            } catch (error) {
+                console.error("送信エラー:", error);
+                statusEl.innerText = "送信に失敗しました。設定を確認してください。";
+                logEl.innerHTML += `<div>[エラー] ${error.message}</div>`;
+            } finally {
+                tapBtn.disabled = false;
+                updateSendState();
+            }
+        }
+    </script>
+
+</body>
+</html>
