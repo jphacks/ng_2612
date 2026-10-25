@@ -1,4 +1,4 @@
-# Cocone
+# Cocone（ココネ　心×音×コネクト）
 
 [![IMAGE ALT TEXT HERE](https://jphacks.com/wp-content/uploads/2026/07/IMG_5316.png)](https://www.youtube.com/watch?v=piaNsc6ilBI)
 
