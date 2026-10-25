@@ -1,6 +1,7 @@
 import M5
 from hardware import Pin, PWM, I2C
 import time
+import math
 import network
 import ssl
 import json
@@ -41,6 +42,9 @@ TEMP_CHANNEL = 0
 # MQTT受信データを保存する変数
 pending_intervals = None
 
+#動き検知用の状態管理
+is_holding = False
+last_motion_time = 0
 
 def select_hub_channel(i2c, channel):
     if 0 <= channel <= 5:
@@ -52,6 +56,12 @@ def vibrate(power, duration_ms):
     motor_pwm.duty(power)
     time.sleep_ms(duration_ms)
     motor_pwm.duty(0)
+
+def get_total_accel():
+    """内蔵IMUから合成加速度(G)を取得する関数"""
+    acc = M5.Imu.getAccel()
+    # x, y, z 軸の合成ベクトル長を計算 (静止時は約 1.0G)
+    return math.sqrt(acc[0]**2 + acc[1]**2 + acc[2]**2)
 
 
 # ==========================================
@@ -144,7 +154,16 @@ def connect_mqtt():
 # intervalsは次の振動までの間隔（ms）
 # ==========================================
 def play_rhythm(intervals):
+    global is_holding, last_motion_time
+
     for interval in intervals:
+        M5.update()
+        current_time = time.ticks_ms()
+        accel_val = get_total_accel()
+
+        if abs(accel_val - 1.0) > 0.25:
+            last_motion_time = current_time
+
         # 1打目の振動：強めの振動
         vibrate(HEARTBEAT_POWER, 30)
 
@@ -180,12 +199,12 @@ def read_temperature(i2c):
 # メイン処理
 # ==========================================
 def setup():
-    global pending_intervals
+    global pending_intervals, is_holding, last_motion_time
 
     M5.begin()
     motor_pwm.duty(0)
 
-    M5.Lcd.setTextSize(2)
+    M5.Lcd.setTextSize(3)
     M5.Lcd.clear()
     M5.Lcd.setCursor(10, 10)
     M5.Lcd.print("AWS Heartbeat")
@@ -204,6 +223,7 @@ def setup():
 
     while True:
         M5.update()
+        current_time = time.ticks_ms()
 
         # MQTT受信を処理
         try:
@@ -215,14 +235,41 @@ def setup():
             # 接続が切れた場合は、再接続が必要です
             mqtt = connect_mqtt()
 
-        # 新しいリズムを受信したら再生
-        if pending_intervals is not None:
-            intervals = pending_intervals
-            pending_intervals = None
-            play_rhythm(intervals)
+        # --------------------------------------------------
+        # 抱いた（動きが生じた）瞬間の判定
+        # --------------------------------------------------
+        accel_val = get_total_accel()
+        if abs(accel_val - 1.0) > 0.25:
+            last_motion_time = current_time
+            if not is_holding:
+                is_holding = True
+                M5.Lcd.clear()
+                M5.Lcd.setCursor(10, 10)
+                M5.Lcd.print("Heartbeat ON")
+        # --------------------------------------------------
+        # 抱かれている間（is_holding == True）の処理
+        # --------------------------------------------------
+        if is_holding:
+            # 新しいリズムを受信したら再生
+            if pending_intervals is not None:
+                intervals = pending_intervals
+                pending_intervals = None
+                play_rhythm(intervals)
+            else:
+                # リズムデータが来ていない場合の待機
+                time.sleep_ms(100)
 
-        # 2秒ごとに温度測定
-        if time.ticks_diff(time.ticks_ms(), last_temp_time) >= 2000:
+            # 最後に動きを検出してから8秒間静止していたら動作停止
+            if time.ticks_diff(current_time, last_motion_time) > 8000:
+                is_holding = False
+                motor_pwm.duty(0)
+                M5.Lcd.clear()
+                M5.Lcd.setCursor(10, 10)
+                M5.Lcd.print("Sleeping...")
+        # --------------------------------------------------
+        # 温度読み取り処理（2秒ごと）
+        # --------------------------------------------------
+        if time.ticks_diff(current_time, last_temp_time) >= 2000:
             try:
                 temperature = read_temperature(i2c0)
                 M5.Lcd.setCursor(10, 100)
@@ -232,8 +279,11 @@ def setup():
             except Exception as e:
                 print("Temperature error:", e)
 
-            last_temp_time = time.ticks_ms()
+            last_temp_time = current_time
 
+        # スリープ時の検知ポーリング間隔
+        if not is_holding:
+            time.sleep_ms(200)
 
 if __name__ == "__main__":
     setup()
